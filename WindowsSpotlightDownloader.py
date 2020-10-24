@@ -11,9 +11,9 @@ import urllib
 import sys
 
 startingPageNumber = 1
-pageCount = 5              #-1 for all pages till the end
+pageCount = -1              #-1 for all pages till the end
 
-downloadFolder = "C:/Users/tuncd/Pictures/WindowsSpotlight/new/"
+downloadFolder = "G:/WindowsSpotlightv2/"
 downloadLogPath = downloadFolder + 'WindowsSpotlightDownloadLog.txt'
 pageRoot = 'windows10spotlight.com'
 pageSuffix = '/page/'
@@ -174,9 +174,9 @@ for p in range(start,end):
             imgLinkScraper.close()
             
             if link != '':
-                print("Downloading: ",totalImages)
                 totalImages = totalImages + 1
-        
+                print("Downloading: ",totalImages)
+                
                 imagePageHtml = getPageHtml(link)
                 
                 
