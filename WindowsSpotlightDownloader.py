@@ -11,10 +11,10 @@ import urllib
 import sys
 
 startingPageNumber = 1
-pageCount = -1              #-1 for all pages till the end
+pageCount = -1                              #-1 for all pages till the end
 
-downloadFolder = "G:/WindowsSpotlightv2/"
-downloadLogPath = downloadFolder + 'WindowsSpotlightDownloadLog.txt'
+downloadFolder = "G:/WindowsSpotlightv2"    #Modify this
+downloadLogPath = downloadFolder + '/WindowsSpotlightDownloadLog.txt'
 pageRoot = 'windows10spotlight.com'
 pageSuffix = '/page/'
 totalBytes = 0
@@ -33,13 +33,24 @@ def getPageHtml(url):
     if '/' in url:
         urlRoot = url[:url.find('/')]
         urlSuffix = url[url.find('/'):]
+    
+    retryCount = 0
+    while retryCount < 3:
+        conn = http.client.HTTPSConnection(urlRoot,443)
+        try:
+            
+            conn.request('GET',urlSuffix)
+            r= conn.getresponse()
+            output = r.read()
+            conn.close()
+            return output
+        except:
+            retryCount = retryCount + 1
+            print('retrying...')
+            conn.close()
         
-    conn = http.client.HTTPSConnection(urlRoot,443)
-    conn.request('GET',urlSuffix)
-    r= conn.getresponse()
-    output = r.read()
-    conn.close()
-    return output
+    return ''
+    
 
 
 def getAttributeIfExists(attrb,key):
@@ -180,10 +191,17 @@ for p in range(start,end):
                 imagePageHtml = getPageHtml(link)
                 
                 
+                
+                
+                
                 imgScraper = ImageScraper()
                 imgScraper.feed(str(imagePageHtml))
                 imgDlLink = imgScraper.returnData()
                 image = getPageHtml(imgDlLink)
+                
+                if image == '':
+                    continue
+                
                 dlBytes = len(image)
                 
                 imgObj = ImageURLClass(ID, name, imgDlLink, dlBytes)
@@ -192,7 +210,7 @@ for p in range(start,end):
                 totalBytes = totalBytes + dlBytes
                 
                 imageSrc = ID + ".jpg"
-                with open(downloadFolder + imageSrc, 'wb') as f:
+                with open(downloadFolder + '/' +imageSrc, 'wb') as f:
                     f.write(image)
                     f.flush()
                     f.close()
