@@ -6,25 +6,124 @@ Created on Sun Oct 27 22:11:10 2019
 """
 
 import http.client
+from html.parser import HTMLParser
+import urllib
+import sys
+
+startingPageNumber = 1
+pageCount = 5              #-1 for all pages till the end
+
+downloadFolder = "C:/Users/tuncd/Pictures/WindowsSpotlight/new/"
+downloadLogPath = downloadFolder + 'WindowsSpotlightDownloadLog.txt'
+pageRoot = 'windows10spotlight.com'
+pageSuffix = '/page/'
+totalBytes = 0
+totalImages = 0
 
 
 
-def getPageHtml(urlroot,urlsuffix="/"):
-    #print("Getting URL: ",urlroot,urlsuffix)
-    conn = http.client.HTTPSConnection(urlroot,443)
-    conn.request('GET',urlsuffix)
+def getPageHtml(url):
+    
+    if '://' in url:
+        url = url[url.find('://')+3:]
+
+    urlRoot = url
+    urlSuffix = '/'
+    
+    if '/' in url:
+        urlRoot = url[:url.find('/')]
+        urlSuffix = url[url.find('/'):]
+        
+    conn = http.client.HTTPSConnection(urlRoot,443)
+    conn.request('GET',urlSuffix)
     r= conn.getresponse()
     output = r.read()
     conn.close()
     return output
 
 
-downloadFolder = "C:/Users/dtunc/Pictures/WindowsSpotlight/"
-pageRoot = 'spotlight.it-notes.ru'
-pageSuffix = '/page/'
-totalBytes = 0
-currentPageNumber = 1
-maxPageNumber = -1
+def getAttributeIfExists(attrb,key):
+    for name, value in attrb:
+        if name == key:
+            return value
+        
+    return ''
+
+
+class ImageURLClass:
+    def __init__(self,ID,title,url,size):
+        self.ID = ID
+        self.title = title
+        self.url = url
+        self.size = size
+    
+    def logImage(self):
+        with open(downloadLogPath, 'a') as f:
+            line = str(self.size/1024) + '\t' + self.ID + '\t' + self.url + ' \t' + self.title + '\n'
+            f.write(line)
+            f.flush()
+            f.close()
+            
+        
+    
+
+class ImageLinkScraper(HTMLParser):
+    parenttag = ''
+    parentattr = []
+    link = ''
+    imgid = ''
+    title = ''
+    
+    def handle_starttag(self, tag, attrs):        
+        if tag == 'a' and  self.parenttag == 'h2':
+            
+            self.link = getAttributeIfExists(attrs,'href')
+            self.imgid = getAttributeIfExists(attrs, 'title')
+            #print("Got image page | Link:" + self.link + ' | ID:' + self.imgid)
+                    
+        self.parenttag = tag
+        self.parentattr = attrs
+        
+
+    def handle_endtag(self, tag):
+        #print("Encountered an end tag :", tag)
+        pass
+
+    def handle_data(self, data):
+        #print('DATA - parenttag: ' + str(self.parenttag) + ' - parentattr:' + str(self.parentattr))
+        try:
+            if self.parenttag == 'span' and getAttributeIfExists(self.parentattr,'class') == 'entry-title hidden':
+                self.title = data
+                #print('Got title:',data)
+        except Exception as a:
+            print(a)
+        
+    def returnData(self):
+        return self.link,self.imgid,self.title
+
+
+class ImageScraper(HTMLParser):
+    link = ''
+    def handle_starttag(self, tag, attrs):
+        if tag == 'a' and  getAttributeIfExists(self.parentattr,'class') == 'wp-caption aligncenter':
+            self.link = getAttributeIfExists(attrs,'href')
+            #print("Got DL link:" + self.link)
+                    
+        self.parenttag = tag
+        self.parentattr = attrs
+    
+    def handle_endtag(self, tag):
+        pass
+    
+    def handle_data(self, data):
+        pass
+        
+    def returnData(self):
+        return self.link
+
+
+
+
 
 
 rootHtml = getPageHtml(pageRoot)
@@ -33,43 +132,75 @@ pageNumberDividerPhrase = "next page-numbers"
 
 pageNumberSplit = str(rootHtml).split(pageNumberDividerPhrase)
 pageNumberStr = pageNumberSplit[0]
-pgNoIndex = pageNumberStr.rfind("page")
-pgNoIndexStart = pgNoIndex + 5
-pgNoIndexEnd = pageNumberStr.rfind("\\'>")
+pgNoIndex = pageNumberStr.rfind("</a>")
+pgNoIndexEnd = pgNoIndex
+pgNoIndexStart = pageNumberStr.rfind('">')
+pgNoIndexStart = pgNoIndexStart + 2
 pageNumber = pageNumberStr[pgNoIndexStart:pgNoIndexEnd]
 
 print("There are ",pageNumber," pages in total.")
 
-maxPageNumber = int(pageNumber)
-maxPageNumber = 5
+maxPages = 0
+try:
+    maxPages = int(pageNumber)
+except TypeError:
+    print('Max page number parse error')
+    sys.exit(1)
+    
 
+start = startingPageNumber
 
-for p in range(1,maxPageNumber+1):    
-    print("\n---Page: ",currentPageNumber,"---\n\n")
-    currentPageNumber = currentPageNumber + 1
-    pageHtml = getPageHtml(pageRoot,pageSuffix + str(p))    
-    pageSplit = str(pageHtml).split("\"more-link\"")
+if start <= 0 or start > maxPages or start + pageCount > maxPages + 1:
+    print('Page number error')
+    sys.exit(1)
+
+if pageCount != -1:
+    end = start + pageCount
+else:
+    end = maxPages + 1
+
+for p in range(start,end):
+    print("\n---Page: ",p,"---\n\n")
+    
+    pageHtml = getPageHtml(pageRoot + pageSuffix + str(p))
+    pageSplit = str(pageHtml).split('</article>')
     a = 1
-    for l in pageSplit[1:]:
-        imagelink = l[7:l.find("title")-2]
-        imageID = imagelink[imagelink.rfind("/")+1:]
-        imageSrc = imageID + ".jpg"
-        print("\n\n",str(a),"------------------\n\n",imagelink,"- ID : ",imageID,"\n")
-        a = a + 1
+    
+    for l in pageSplit[0:]:
+        if '<article' in l:
+            imgLinkScraper = ImageLinkScraper()
+            imgLinkScraper.feed(l)
+            link, ID, name = imgLinkScraper.returnData()
+            imgLinkScraper.close()
+            
+            if link != '':
+                print("Downloading: ",totalImages)
+                totalImages = totalImages + 1
         
-        imageLinkHtml = str(getPageHtml(pageRoot,imagelink[imagelink.find("images")-1:]))
-          
+                imagePageHtml = getPageHtml(link)
+                
+                
+                imgScraper = ImageScraper()
+                imgScraper.feed(str(imagePageHtml))
+                imgDlLink = imgScraper.returnData()
+                image = getPageHtml(imgDlLink)
+                dlBytes = len(image)
+                
+                imgObj = ImageURLClass(ID, name, imgDlLink, dlBytes)
+                imgObj.logImage()
+                
+                totalBytes = totalBytes + dlBytes
+                
+                imageSrc = ID + ".jpg"
+                with open(downloadFolder + imageSrc, 'wb') as f:
+                    f.write(image)
+                    f.flush()
+                    f.close()
+                
+                
+                    
+                
+                
+print(str(totalBytes/1024/1024)," MB downloaded.")
         
-        imageDlLink = imageLinkHtml[imageLinkHtml.find("wp-content/uploads"):imageLinkHtml.find(imageSrc)+len(imageSrc)]
         
-        
-        print("Downloading image: ",imageDlLink)
-        
-        image = getPageHtml(pageRoot,"/" + imageDlLink)
-        
-        with open(downloadFolder + imageSrc, 'wb') as f:
-            f.write(image)
-            f.flush()
-            f.close()
-            totalBytes = totalBytes + len(image)
-            print(totalBytes/1024/1024," MB downloaded.")
